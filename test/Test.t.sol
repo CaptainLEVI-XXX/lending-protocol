@@ -27,6 +27,7 @@ contract VaultRouterTest is Test {
     address public signer2 = makeAddr("signer2");
     address public depositor1 = makeAddr("depositor1");
     address public depositor2 = makeAddr("depositor2");
+    address public depositor3 = makeAddr("depositor3");
     address public borrower1 = makeAddr("borrower1");
     address public borrower2 = makeAddr("borrower2");
     address public nonWhitelistedUser = makeAddr("nonWhitelistedUser");
@@ -147,6 +148,7 @@ contract VaultRouterTest is Test {
         // Fund depositors
         usdc.mint(depositor1, INITIAL_BALANCE);
         usdc.mint(depositor2, INITIAL_BALANCE);
+        usdc.mint(depositor3, INITIAL_BALANCE);
 
         // Fund borrowers with some USDC for payments
         usdc.mint(borrower1, 50_000e6);
@@ -504,5 +506,63 @@ contract VaultRouterTest is Test {
         // Execute should fail due to insufficient liquidity
         vm.expectRevert();
         borrowVault.executeBorrow(requestId);
+    }
+
+    function testShareValueIncreasesWithInterest() public {
+        // Initial setup - 3 depositors each deposit 50k USDC
+        uint256 depositAmount = 50_000e6;
+
+        // Deposit for each depositor through router
+        vm.startPrank(depositor1);
+        usdc.approve(address(router), depositAmount);
+        uint256 shares1 = router.deposit(address(usdc), depositAmount, depositor1);
+        vm.stopPrank();
+
+        vm.startPrank(depositor2);
+        usdc.approve(address(router), depositAmount);
+        uint256 shares2 = router.deposit(address(usdc), depositAmount, depositor2);
+        vm.stopPrank();
+
+        vm.startPrank(depositor3);
+        usdc.approve(address(router), depositAmount);
+        uint256 shares3 = router.deposit(address(usdc), depositAmount, depositor3);
+        vm.stopPrank();
+
+        // Verify initial 1:1 share ratio
+        assertEq(shares1, depositAmount, "Initial deposit should be 1:1");
+        assertEq(lendingVault.convertToAssets(1e6), 1e6, "Initial share price should be 1:1");
+
+        // Simulate borrower taking 100k loan and making payments
+        uint256 loanAmount = 100_000e6;
+
+        // Mock borrow vault allocates funds
+        vm.prank(address(borrowVault));
+        lendingVault.allocateFunds(loanAmount);
+
+        // Simulate 6 monthly payments with interest
+        // Each payment: ~$8,698.84 (principal: ~$8,032.17, interest: ~$666.67)
+        for (uint256 i = 0; i < 6; i++) {
+            uint256 principalPayment = 8_032e6; // Simplified amounts
+            uint256 interestPayment = 667e6;
+
+            // Borrower pays back through borrow vault
+            usdc.mint(address(borrowVault), principalPayment + interestPayment);
+
+            vm.startPrank(address(borrowVault));
+            usdc.approve(address(lendingVault), principalPayment + interestPayment);
+            lendingVault.returnFunds(principalPayment, interestPayment);
+            vm.stopPrank();
+        }
+
+        // Check share value has increased
+        uint256 newSharePrice = lendingVault.convertToAssets(1e6);
+        assertGt(newSharePrice, 1e6, "Share price should increase after interest payments");
+
+        // Verify depositors can withdraw more than they deposited
+        uint256 depositor1Value = lendingVault.convertToAssets(shares1);
+        assertGt(depositor1Value, depositAmount, "Depositor should have earned yield");
+
+        console.log("Share price appreciation: %s%%", ((newSharePrice - 1e6) * 100) / 1e6);
+        console.log("Depositor 1 profit: %s USDC", (depositor1Value - depositAmount) / 1e6);
     }
 }
