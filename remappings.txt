@@ -2,3 +2,4 @@
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 @solmate/=lib/solmate/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@qiro/=src/

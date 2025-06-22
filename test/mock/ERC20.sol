@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {ERC20} from "@solmate/tokens/ERC20.sol";
+import {ERC20} from "@solady/tokens/ERC20.sol";
 
 contract MockERC20 is ERC20 {
-    constructor(string memory name, string memory symbol, uint8 decimals) ERC20(name, symbol, decimals) {}
+
+    function name() public pure override returns (string memory) {
+        return "MockERC20";
+    }
+
+    function symbol() public pure override returns (string memory) {
+        return "MOCK";  
+    }
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
 
     function mint(address to, uint256 amount) public {
         _mint(to, amount);

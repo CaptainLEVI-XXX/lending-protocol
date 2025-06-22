@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IAccessRegistry} from "./interfaces/IAccessRegistry.sol";
-import {CustomRevert} from "./libraries/CustomRevert.sol";
-import {Roles} from "./helper/Roles.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IAccessRegistry} from "@qiro/interfaces/IAccessRegistry.sol";
+import {CustomRevert} from "@qiro/libraries/CustomRevert.sol";
+import {Roles} from "@qiro/helper/Roles.sol";
+import {SafeTransferLib} from "@solady/utils/SafeTransferLib.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ILendingVault} from "./interfaces/ILendingVault.sol";
-import {IBorrowVault} from "./interfaces/IBorrowVault.sol";
-import {Lock} from "./libraries/Lock.sol";
+import {ILendingVault} from "@qiro/interfaces/ILendingVault.sol";
+import {IBorrowVault} from "@qiro/interfaces/IBorrowVault.sol";
+import {Lock} from "@qiro/libraries/Lock.sol";
 
 /// @title VaultRouter
 /// @author Qiro
@@ -20,12 +17,14 @@ import {Lock} from "./libraries/Lock.sol";
 ///      for users to interact with lending and borrowing vaults.
 contract VaultRouter is Roles {
     using CustomRevert for bytes4;
-    using SafeERC20 for IERC20;
+    using SafeTransferLib for address;
     using Lock for *;
 
     /// @dev Constructor to initialize the contract with an access registry address
     /// @param _accessRegistry The address of the access registry
-    constructor(address _accessRegistry) Roles(_accessRegistry) {}
+    constructor(address _accessRegistry){
+        initializeRoles(_accessRegistry);
+    }
 
     /// @dev Custom error definitions for the router contract
     error AssetNotSupported();
@@ -54,6 +53,8 @@ contract VaultRouter is Roles {
         address vaultAddress;
         uint256 minLoanAmount;
         uint256 maxLoanAmount;
+        uint256 maxLoanDuration;
+        uint256 minLoanDuration;
         bool isPaused;
     }
 
@@ -120,9 +121,8 @@ contract VaultRouter is Roles {
         }
         if (_reciever == address(0)) InvalidAddress.selector.revertWith();
 
-        IERC20 assetDispatcher = IERC20(_asset);
-        assetDispatcher.safeTransferFrom(msg.sender, address(this), _amount);
-        assetDispatcher.forceApprove(vaultInfo.vaultAddress, _amount);
+        _asset.safeTransferFrom(msg.sender, address(this), _amount);
+        _asset.safeApprove(vaultInfo.vaultAddress, _amount);
 
         shares = ILendingVault(vaultInfo.vaultAddress).deposit(_amount, _reciever);
     }
@@ -141,7 +141,7 @@ contract VaultRouter is Roles {
     {
         LendingVaultInfo memory vaultInfo = getLendingVault(_asset);
         if (_reciever == address(0)) InvalidAddress.selector.revertWith();
-
+        if (_reciever != owner) InvalidAddress.selector.revertWith();
         asset = ILendingVault(vaultInfo.vaultAddress).withdraw(_amount, _reciever, owner);
     }
 
@@ -159,6 +159,7 @@ contract VaultRouter is Roles {
     {
         BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
         if (_amount < vaultInfo.minLoanAmount || _amount > vaultInfo.maxLoanAmount) InvalidAmount.selector.revertWith();
+        if (_duration < vaultInfo.minLoanDuration || _duration > vaultInfo.maxLoanDuration) InvalidAmount.selector.revertWith();
         requestId = IBorrowVault(vaultInfo.vaultAddress).requestBorrow(_amount, _duration, msg.sender);
     }
 
@@ -171,9 +172,8 @@ contract VaultRouter is Roles {
         IBorrowVault vaultDispatcher = IBorrowVault(vaultInfo.vaultAddress);
         (,,, uint256 monthlyPayment,,,) = vaultDispatcher.getLoanDetails(_borrower);
 
-        IERC20 assetDispatcher = IERC20(_asset);
-        assetDispatcher.safeTransferFrom(msg.sender, address(this), monthlyPayment);
-        assetDispatcher.forceApprove(vaultInfo.vaultAddress, monthlyPayment);
+        _asset.safeTransferFrom(msg.sender, address(this), monthlyPayment);
+        _asset.safeApprove(vaultInfo.vaultAddress, monthlyPayment);
         vaultDispatcher.makePayment(_borrower);
     }
 
@@ -184,10 +184,9 @@ contract VaultRouter is Roles {
     function payoffLoan(address _asset, address _borrower) external nonReentrant {
         BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
         IBorrowVault vaultDispatcher = IBorrowVault(vaultInfo.vaultAddress);
-        IERC20 assetDispatcher = IERC20(_asset);
         uint256 payoffAmount = vaultDispatcher.getPayoffAmount(_borrower);
-        assetDispatcher.safeTransferFrom(msg.sender, address(this), payoffAmount);
-        assetDispatcher.forceApprove(vaultInfo.vaultAddress, payoffAmount);
+        _asset.safeTransferFrom(msg.sender, address(this), payoffAmount);
+        _asset.safeApprove(vaultInfo.vaultAddress, payoffAmount);
         vaultDispatcher.payoffLoan(_borrower);
     }
 

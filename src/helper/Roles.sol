@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {IAccessRegistry} from "../interfaces/IAccessRegistry.sol";
-import {CustomRevert} from "../libraries/CustomRevert.sol";
+import {IAccessRegistry} from "@qiro/interfaces/IAccessRegistry.sol";
+import {CustomRevert} from "@qiro/libraries/CustomRevert.sol";
+import {Initializable} from "@solady/utils/Initializable.sol";
 
 /// @title Roles
 /// @notice Base contract for role-based access control
 /// @dev Provides modifiers for role-based access control using AccessRegistry
-abstract contract Roles {
+abstract contract Roles is Initializable {
     using CustomRevert for bytes4;
 
     /// @dev Role identifier for admin users
@@ -25,9 +26,14 @@ abstract contract Roles {
     /// @dev Custom error for unauthorized access
     error NotAuthorized();
 
-    /// @notice Constructor to initialize the access registry
+    // /// @notice Constructor to disable initializers
+    // constructor() {
+    //     _disableInitializers();
+    // }
+
+    /// @notice Initializer to initialize the access registry
     /// @param _accessRegistry Address of the access registry
-    constructor(address _accessRegistry) {
+    function initializeRoles(address _accessRegistry) internal initializer {
         accessRegistry = IAccessRegistry(_accessRegistry);
     }
 

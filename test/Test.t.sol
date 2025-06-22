@@ -2,12 +2,16 @@
 pragma solidity ^0.8.13;
 
 import {Test, console} from "forge-std/Test.sol";
-import {AccessRegistry} from "../src/AccessRegisty.sol";
-import {LendingVault} from "../src/LendingVault.sol";
-import {BorrowVault} from "../src/BorrowVaultII.sol";
+import {AccessRegistry} from "@qiro/AccessRegisty.sol";
+import {LendingVault} from "@qiro/LendingVault.sol";
+import {BorrowVault} from "@qiro/BorrowVaultII.sol";
 import {MockERC20} from "./mock/ERC20.sol";
-import {ERC20} from "@solmate/tokens/ERC20.sol";
-import {VaultRouter} from "../src/Router.sol";
+// import {ERC20} from "@solmate/tokens/ERC20.sol";
+import {VaultRouter} from "@qiro/Router.sol";
+import {BorrowVaultStorage} from "@qiro/storage/BorrowVault.sol";
+import {LendingVaultStorage} from "@qiro/storage/LendingVault.sol";
+import {ILendingVault} from "@qiro/interfaces/ILendingVault.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/Proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VaultRouterTest is Test {
     // Contracts
@@ -51,20 +55,43 @@ contract VaultRouterTest is Test {
 
     function setUp() public {
         // Deploy contracts
-        usdc = new MockERC20("USD Coin", "USDC", 6);
+        usdc = new MockERC20();
 
         // Deploy core contracts
         vm.startPrank(admin);
         accessRegistry = new AccessRegistry(admin);
         router = new VaultRouter(address(accessRegistry));
-        lendingVault = new LendingVault(ERC20(address(usdc)), "Lending USDC", "lUSDC", address(accessRegistry));
-        borrowVault =
-            new BorrowVault("Debt USDC", "dUSDC", address(accessRegistry), address(lendingVault), address(usdc));
+        _setUpLendingVault();
+        _setUpBorrowVault();
         vm.stopPrank();
 
         _setupRoles();
         _setupVaults();
         _fundAccounts();
+    }
+
+    function _setUpLendingVault() internal {
+    
+        lendingVault = new LendingVault();
+
+        bytes memory data = abi.encodeWithSelector(LendingVault.initializeLendingVault.selector, LendingVaultStorage.TokenInfo(address(usdc), "Lending USDC", "lUSDC"), address(accessRegistry));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(lendingVault), data);
+
+        lendingVault = LendingVault(address(proxy));
+
+       
+    }
+
+    function _setUpBorrowVault() internal {
+      
+        borrowVault = new BorrowVault();
+
+        bytes memory data = abi.encodeWithSelector(BorrowVault.initializeBorrowVault.selector, BorrowVaultStorage.AssetInfo("Debt USDC", "dUSDC",address(usdc),ILendingVault(address(lendingVault))), address(accessRegistry));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(borrowVault), data);
+
+        borrowVault = BorrowVault(address(proxy));
+
+   
     }
 
     function _setupRoles() internal {
@@ -106,12 +133,11 @@ contract VaultRouterTest is Test {
             vaultAddress: address(borrowVault),
             minLoanAmount: 1_000e6, // Min 1k USDC
             maxLoanAmount: 100_000e6, // Max 100k USDC
+            maxLoanDuration: 36, // Max 36 months
+            minLoanDuration: 6, // Min 6 months
             isPaused: false
         });
         router.setBorrowVault(address(usdc), borrowInfo);
-
-        // Set borrow vault in lending vault
-        // lendingVault.setBorrowVault(address(borrowVault));
 
         vm.stopPrank();
     }

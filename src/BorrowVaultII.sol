@@ -1,22 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IAccessRegistry} from "./interfaces/IAccessRegistry.sol";
-import {ILendingVault} from "./interfaces/ILendingVault.sol";
-import {CustomRevert} from "./libraries/CustomRevert.sol";
-import {Roles} from "./helper/Roles.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {IAccessRegistry} from "@qiro/interfaces/IAccessRegistry.sol";
+import {ILendingVault} from "@qiro/interfaces/ILendingVault.sol";
+import {CustomRevert} from "@qiro/libraries/CustomRevert.sol";
+import {Roles} from "@qiro/helper/Roles.sol";
+import {UUPSUpgradeable} from "@solady/utils/UUPSUpgradeable.sol";
+import {ERC20} from "@solady/tokens/ERC20.sol";
+import {SafeTransferLib} from "@solady/utils/SafeTransferLib.sol";
+import {BorrowVaultStorage} from "./storage/BorrowVault.sol";
+
 
 /**
  * @title BorrowVault
  * @dev Debt token (dToken) implementation for amortized borrowing
  * @notice Manages loans with fixed payment schedules and amortization
  */
-contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
-    using SafeERC20 for IERC20;
+contract BorrowVault is BorrowVaultStorage, ERC20, Roles, UUPSUpgradeable {
+    using SafeTransferLib for address;
     using CustomRevert for bytes4;
 
     // Constants
@@ -25,107 +26,31 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
     uint256 public constant SECONDS_PER_MONTH = 30 days;
     uint256 public constant GRACE_PERIOD = 5 days;
 
-    // Immutables
-    ILendingVault public immutable lendingVault;
-    IERC20 public immutable asset;
 
     // Loan parameters
     uint256 public baseAPR = 800; // 8% base APR in basis points
+    uint256 public requiredApprovals = 2;
     uint256 public maxLoanDuration = 36; // 36 months max
     uint256 public minLoanDuration = 6; // 6 months min
-    uint256 public maxBorrowAmount = 1000000e6; // 1M USDC default
-    uint256 public minBorrowAmount = 10000e6; // 10K USDC default
-
-    // Loan structure for amortized loans
-    struct Loan {
-        uint256 principal; // Original loan amount
-        uint256 remainingPrincipal; // Outstanding principal
-        uint256 apr; // Annual percentage rate in basis points
-        uint256 monthlyPayment; // Fixed monthly payment amount
-        uint256 loanDuration; // Loan duration in months
-        uint256 startTime; // Loan start timestamp
-        uint256 nextPaymentDue; // Next payment due date
-        uint256 paymentsRemaining; // Number of payments remaining
-        bool active; // Loan status
-    }
-
-    // Payment tracking
-    struct PaymentRecord {
-        uint256 timestamp;
-        uint256 principalPaid;
-        uint256 interestPaid;
-        uint256 totalPaid;
-    }
-
-    // Borrowing requests
-    struct BorrowRequest {
-        address borrower;
-        uint256 amount;
-        uint256 duration; // in months
-        uint256 approvals;
-        mapping(address => bool) hasApproved;
-        bool executed;
-    }
-
-    // State variables
-    mapping(address => Loan) public loans;
-    mapping(address => PaymentRecord[]) public paymentHistory;
-    mapping(uint256 => BorrowRequest) public borrowRequests;
-
-    uint256 public nextRequestId;
-    uint256 public requiredApprovals = 2;
-    uint256 public totalOutstandingPrincipal;
-    uint256 public totalInterestCollected;
-
-    // Errors
-    error InvalidAmount();
-    error DebtTokenAreNotTransferable();
-    error DebtTokenAreNotApprovable();
-    error AlreadyExecuted();
-    error AlreadyApproved();
-    error InsufficientApprovals();
-    error InsufficientFunds();
-    error NoActiveLoan();
-    error HasOutstandingLoan();
-    error NotAdmin();
-    error NotMultisig();
-    error NotWhitelisted();
-    error InvalidAddress();
-    error InvalidDuration();
-    error PaymentTooEarly();
-    error PaymentExceedsDebt();
-    error InvalidRequest();
-
-    // Events
-    event BorrowRequested(uint256 indexed requestId, address indexed borrower, uint256 amount, uint256 duration);
-    event BorrowApproved(uint256 indexed requestId, address indexed approver);
-    event LoanDisbursed(
-        address indexed borrower, uint256 principal, uint256 apr, uint256 monthlyPayment, uint256 duration
-    );
-    event PaymentMade(address indexed borrower, uint256 principalPaid, uint256 interestPaid, uint256 paymentsRemaining);
-    event LoanPaidOff(address indexed borrower);
-    event ParameterUpdated(string parameter, uint256 value);
 
     /**
      * @dev Constructor
-     * @param _name Debt token name
-     * @param _symbol Debt token symbol
-     * @param _accessRegistry Access control registry
-     * @param _lendingVault Associated lending vault
-     * @param _asset Underlying asset
      */
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        address _accessRegistry,
-        address _lendingVault,
-        address _asset
-    ) ERC20(_name, _symbol) Roles(_accessRegistry) {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initializeBorrowVault(AssetInfo memory _tokenInfo,address _accessRegistry) external initializer {
+        if (_tokenInfo.asset == address(0)) InvalidAddress.selector.revertWith();
         if (_accessRegistry == address(0)) InvalidAddress.selector.revertWith();
-        if (_lendingVault == address(0)) InvalidAddress.selector.revertWith();
-        if (_asset == address(0)) InvalidAddress.selector.revertWith();
-        lendingVault = ILendingVault(_lendingVault);
-        asset = IERC20(_asset);
+        if (address(_tokenInfo.lendingVault) == address(0)) InvalidAddress.selector.revertWith();
+
+        AssetInfo storage assetInfo = assetInfo();
+        initializeRoles(_accessRegistry);
+        assetInfo.name = _tokenInfo.name;
+        assetInfo.symbol = _tokenInfo.symbol;
+        assetInfo.lendingVault = _tokenInfo.lendingVault;
+        assetInfo.asset = _tokenInfo.asset;
     }
 
     // === CONFIGURATION ===
@@ -137,12 +62,6 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         } else if (keccak256(bytes(parameter)) == keccak256("baseAPR")) {
             if (value >= BASIS_POINTS) InvalidAmount.selector.revertWith();
             baseAPR = value;
-        } else if (keccak256(bytes(parameter)) == keccak256("maxLoanDuration")) {
-            if (value == 0 || value > 60) InvalidDuration.selector.revertWith();
-            maxLoanDuration = value;
-        } else if (keccak256(bytes(parameter)) == keccak256("minLoanDuration")) {
-            if (value == 0 || value > maxLoanDuration) InvalidDuration.selector.revertWith();
-            minLoanDuration = value;
         } else {
             revert("Unknown parameter");
         }
@@ -164,11 +83,13 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         returns (uint256 requestId)
     {
         // if (duration < minLoanDuration || duration > maxLoanDuration) InvalidDuration.selector.revertWith();
-        if (loans[caller].active) HasOutstandingLoan.selector.revertWith();
+        LoanInfo storage loanInfo = loanInfo();
+        BorrowRequestInfo storage borrowRequestInfo = borrowRequestInfo();
+        if (loanInfo.loans[caller].active) HasOutstandingLoan.selector.revertWith();
 
-        requestId = nextRequestId++;
+        requestId = loanInfo.nextRequestId++;
 
-        BorrowRequest storage request = borrowRequests[requestId];
+        BorrowRequest storage request = borrowRequestInfo.borrowRequests[requestId];
         request.borrower = caller;
         request.amount = amount;
         request.duration = duration;
@@ -181,7 +102,10 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @param requestId Request to approve
      */
     function approveBorrow(uint256 requestId) external onlyMultisigSigner {
-        BorrowRequest storage request = borrowRequests[requestId];
+
+        BorrowRequestInfo storage borrowRequestInfo = borrowRequestInfo();
+        BorrowRequest storage request = borrowRequestInfo.borrowRequests[requestId];
+
         if (request.borrower == address(0)) InvalidRequest.selector.revertWith();
         if (request.executed) AlreadyExecuted.selector.revertWith();
         if (request.hasApproved[msg.sender]) AlreadyApproved.selector.revertWith();
@@ -197,14 +121,17 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @param requestId Request to execute
      */
     function executeBorrow(uint256 requestId) external {
-        BorrowRequest storage request = borrowRequests[requestId];
+        BorrowRequestInfo storage borrowRequestInfo = borrowRequestInfo();
+        AssetInfo storage assetInfo = assetInfo();
+        LoanInfo storage loanInfo = loanInfo();
+        BorrowRequest storage request = borrowRequestInfo.borrowRequests[requestId];
         if (request.executed) AlreadyExecuted.selector.revertWith();
         if (request.approvals < requiredApprovals) InsufficientApprovals.selector.revertWith();
 
         request.executed = true;
 
         // Request funds from lending vault
-        bool success = lendingVault.allocateFunds(request.amount);
+        bool success = assetInfo.lendingVault.allocateFunds(request.amount);
         if (!success) InsufficientFunds.selector.revertWith();
 
         // Calculate loan parameters
@@ -212,7 +139,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         uint256 monthlyPayment = calculateMonthlyPayment(request.amount, monthlyRate, request.duration);
 
         // Create loan
-        Loan storage loan = loans[request.borrower];
+        Loan storage loan = loanInfo.loans[request.borrower];
         loan.principal = request.amount;
         loan.remainingPrincipal = request.amount;
         loan.apr = baseAPR;
@@ -224,13 +151,13 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         loan.active = true;
 
         // Update global tracking
-        totalOutstandingPrincipal += request.amount;
+        loanInfo.totalOutstandingPrincipal += request.amount;
 
         // Mint debt tokens (1:1 with borrowed amount)
         _mint(request.borrower, request.amount);
 
         // Transfer funds to borrower
-        asset.safeTransfer(request.borrower, request.amount);
+        assetInfo.asset.safeTransfer(request.borrower, request.amount);
 
         emit LoanDisbursed(request.borrower, request.amount, baseAPR, monthlyPayment, request.duration);
     }
@@ -241,7 +168,9 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @dev Make a monthly payment
      */
     function makePayment(address caller) external onlyProtocolLevel {
-        Loan storage loan = loans[caller];
+        LoanInfo storage loanInfo = loanInfo();
+        AssetInfo storage assetInfo = assetInfo();
+        Loan storage loan = loanInfo.loans[caller];
         if (!loan.active) NoActiveLoan.selector.revertWith();
 
         // Check if payment is due (with grace period)
@@ -257,7 +186,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         }
 
         // Transfer payment from borrower
-        asset.safeTransferFrom(msg.sender, address(this), paymentAmount);
+        assetInfo.asset.safeTransferFrom(msg.sender, address(this), paymentAmount);
 
         // Calculate interest and principal portions
         uint256 interestPayment = calculateInterestPayment(loan.remainingPrincipal, loan.apr);
@@ -269,7 +198,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         loan.nextPaymentDue += SECONDS_PER_MONTH;
 
         // Record payment
-        paymentHistory[caller].push(
+        paymentHistoryInfo().paymentHistory[caller].push(
             PaymentRecord({
                 timestamp: block.timestamp,
                 principalPaid: principalPayment,
@@ -279,16 +208,16 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         );
 
         // Update global tracking
-        totalOutstandingPrincipal -= principalPayment;
-        totalInterestCollected += interestPayment;
+        loanInfo.totalOutstandingPrincipal -= principalPayment;
+        loanInfo.totalInterestCollected += interestPayment;
 
         // Burn debt tokens proportionally
         uint256 tokensToBurn = balanceOf(caller) * principalPayment / (loan.remainingPrincipal + principalPayment);
         _burn(caller, tokensToBurn);
 
         // Return funds to lending vault
-        asset.approve(address(lendingVault), paymentAmount);
-        lendingVault.returnFunds(principalPayment, interestPayment);
+        assetInfo.asset.safeApprove(address(assetInfo.lendingVault), paymentAmount);
+        assetInfo.lendingVault.returnFunds(principalPayment, interestPayment);
 
         emit PaymentMade(caller, principalPayment, interestPayment, loan.paymentsRemaining);
 
@@ -305,7 +234,9 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @dev Pay off entire loan early
      */
     function payoffLoan(address borrower) external onlyProtocolLevel {
-        Loan storage loan = loans[borrower];
+        LoanInfo storage loanInfo = loanInfo();
+        AssetInfo storage assetInfo = assetInfo();
+        Loan storage loan = loanInfo.loans[borrower];
         if (!loan.active) NoActiveLoan.selector.revertWith();
 
         // Calculate total payoff amount (remaining principal + accrued interest)
@@ -313,10 +244,10 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         uint256 payoffAmount = loan.remainingPrincipal + accruedInterest;
 
         // Transfer payment
-        asset.safeTransferFrom(msg.sender, address(this), payoffAmount);
+        assetInfo.asset.safeTransferFrom(msg.sender, address(this), payoffAmount);
 
         // Record payment
-        paymentHistory[borrower].push(
+        paymentHistoryInfo().paymentHistory[borrower].push(
             PaymentRecord({
                 timestamp: block.timestamp,
                 principalPaid: loan.remainingPrincipal,
@@ -326,12 +257,12 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         );
 
         // Update global tracking
-        totalOutstandingPrincipal -= loan.remainingPrincipal;
-        totalInterestCollected += accruedInterest;
+        loanInfo.totalOutstandingPrincipal -= loan.remainingPrincipal;
+        loanInfo.totalInterestCollected += accruedInterest;
 
         // Return funds to lending vault
-        asset.approve(address(lendingVault), payoffAmount);
-        lendingVault.returnFunds(loan.remainingPrincipal, accruedInterest);
+        assetInfo.asset.safeApprove(address(assetInfo.lendingVault), payoffAmount);
+        assetInfo.lendingVault.returnFunds(loan.remainingPrincipal, accruedInterest);
 
         // Clear loan
         loan.remainingPrincipal = 0;
@@ -397,7 +328,8 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @return Final payment amount
      */
     function calculateFinalPayment(address borrower) public view returns (uint256) {
-        Loan memory loan = loans[borrower];
+        LoanInfo storage loanInfo = loanInfo();
+        Loan memory loan = loanInfo.loans[borrower];
         uint256 interestPayment = calculateInterestPayment(loan.remainingPrincipal, loan.apr);
         return loan.remainingPrincipal + interestPayment;
     }
@@ -408,7 +340,8 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @return Accrued interest amount
      */
     function calculateAccruedInterest(address borrower) public view returns (uint256) {
-        Loan memory loan = loans[borrower];
+        LoanInfo storage loanInfo = loanInfo();
+        Loan memory loan = loanInfo.loans[borrower];
 
         // Calculate days since last payment
         uint256 daysSinceLastPayment;
@@ -445,7 +378,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
             bool active
         )
     {
-        Loan memory loan = loans[borrower];
+        Loan memory loan = loanInfo().loans[borrower];
         return (
             loan.principal,
             loan.remainingPrincipal,
@@ -461,7 +394,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @dev Get payment history for a borrower
      */
     function getPaymentHistory(address borrower) external view returns (PaymentRecord[] memory) {
-        return paymentHistory[borrower];
+        return paymentHistoryInfo().paymentHistory[borrower];
     }
 
     /**
@@ -472,7 +405,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
         view
         returns (uint256 paymentAmount, uint256 principalPortion, uint256 interestPortion, uint256 dueDate)
     {
-        Loan memory loan = loans[borrower];
+        Loan memory loan = loanInfo().loans[borrower];
         if (!loan.active) return (0, 0, 0, 0);
 
         if (loan.paymentsRemaining == 1) {
@@ -490,7 +423,7 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
      * @dev Get payoff amount for early repayment
      */
     function getPayoffAmount(address borrower) external view returns (uint256) {
-        Loan memory loan = loans[borrower];
+        Loan memory loan = loanInfo().loans[borrower];
         if (!loan.active) return 0;
 
         uint256 accruedInterest = calculateAccruedInterest(borrower);
@@ -510,8 +443,9 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
             uint256 activeLoans
         )
     {
-        totalPrincipalOutstanding = totalOutstandingPrincipal;
-        totalInterestEarned = totalInterestCollected;
+        LoanInfo storage loanInfo = loanInfo();
+        totalPrincipalOutstanding = loanInfo.totalOutstandingPrincipal;
+        totalInterestEarned = loanInfo.totalInterestCollected;
         averageAPR = baseAPR; // Could be made dynamic based on risk
 
         // Count active loans (simplified - in production, maintain a counter)
@@ -541,4 +475,12 @@ contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
     }
 
     function _authorizeUpgrade(address) internal override onlyAdmin {}
+
+    function name() public view override returns (string memory) {
+        return assetInfo().name;
+    }
+
+    function symbol() public view override returns (string memory) {
+        return assetInfo().symbol;
+    }
 }
