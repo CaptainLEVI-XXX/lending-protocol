@@ -7,3 +7,10 @@ via_ir = true
 optimizer = true
 optimizer_runs = 1_000
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+
+[fuzz]
+runs = 10000
+seed = "1234"
+dictionary_weight = 100
+fail_on_revert = true

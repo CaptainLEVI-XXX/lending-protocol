@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /// @title AccessRegistry
-/// @author Qiro
 /// @notice Central access control registry managing protocol roles and permissions
 /// @dev Implements role-based access control using OpenZeppelin's AccessControl
 contract AccessRegistry is AccessControl {

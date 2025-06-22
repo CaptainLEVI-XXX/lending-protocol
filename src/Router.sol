@@ -11,7 +11,6 @@ import {IBorrowVault} from "@qiro/interfaces/IBorrowVault.sol";
 import {Lock} from "@qiro/libraries/Lock.sol";
 
 /// @title VaultRouter
-/// @author Qiro
 /// @notice Main router contract for handling deposits, withdrawals, and borrowing functionality
 /// @dev This contract serves as the central hub for all vault operations, providing a secure interface
 ///      for users to interact with lending and borrowing vaults.
