@@ -20,6 +20,22 @@ interface IBorrowVault {
         external
         view
         returns (uint256 principal, uint256 currentDebt, uint256 debtTokens, uint256 borrowRate);
-    function requestBorrow(uint256 amount, address caller) external returns (uint256 requestId);
+    function requestBorrow(uint256 amount, uint256 duration, address caller) external returns (uint256 requestId);
     function repay(uint256 amount, address caller) external;
+    function getLoanDetails(address borrower)
+        external
+        view
+        returns (
+            uint256 principal,
+            uint256 remainingPrincipal,
+            uint256 apr,
+            uint256 monthlyPayment,
+            uint256 nextPaymentDue,
+            uint256 paymentsRemaining,
+            bool active
+        );
+
+    function makePayment(address borrower) external;
+    function payoffLoan(address borrower) external;
+    function getPayoffAmount(address borrower) external view returns (uint256);
 }

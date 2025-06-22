@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./interfaces/IAccessRegistry.sol";
-import "./interfaces/ILendingVault.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IAccessRegistry} from "./interfaces/IAccessRegistry.sol";
+import {ILendingVault} from "./interfaces/ILendingVault.sol";
 import {CustomRevert} from "./libraries/CustomRevert.sol";
 import {Roles} from "./helper/Roles.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
  * @title BorrowVault
  * @dev Debt token (dToken) implementation for amortized borrowing
  * @notice Manages loans with fixed payment schedules and amortization
  */
-contract BorrowVault is ERC20,Roles {
+contract BorrowVault is ERC20, Roles, UUPSUpgradeable {
     using SafeERC20 for IERC20;
     using CustomRevert for bytes4;
 
@@ -37,15 +38,15 @@ contract BorrowVault is ERC20,Roles {
 
     // Loan structure for amortized loans
     struct Loan {
-        uint256 principal;           // Original loan amount
-        uint256 remainingPrincipal;  // Outstanding principal
-        uint256 apr;                 // Annual percentage rate in basis points
-        uint256 monthlyPayment;      // Fixed monthly payment amount
-        uint256 loanDuration;        // Loan duration in months
-        uint256 startTime;           // Loan start timestamp
-        uint256 nextPaymentDue;      // Next payment due date
-        uint256 paymentsRemaining;   // Number of payments remaining
-        bool active;                 // Loan status
+        uint256 principal; // Original loan amount
+        uint256 remainingPrincipal; // Outstanding principal
+        uint256 apr; // Annual percentage rate in basis points
+        uint256 monthlyPayment; // Fixed monthly payment amount
+        uint256 loanDuration; // Loan duration in months
+        uint256 startTime; // Loan start timestamp
+        uint256 nextPaymentDue; // Next payment due date
+        uint256 paymentsRemaining; // Number of payments remaining
+        bool active; // Loan status
     }
 
     // Payment tracking
@@ -70,7 +71,7 @@ contract BorrowVault is ERC20,Roles {
     mapping(address => Loan) public loans;
     mapping(address => PaymentRecord[]) public paymentHistory;
     mapping(uint256 => BorrowRequest) public borrowRequests;
-    
+
     uint256 public nextRequestId;
     uint256 public requiredApprovals = 2;
     uint256 public totalOutstandingPrincipal;
@@ -98,7 +99,9 @@ contract BorrowVault is ERC20,Roles {
     // Events
     event BorrowRequested(uint256 indexed requestId, address indexed borrower, uint256 amount, uint256 duration);
     event BorrowApproved(uint256 indexed requestId, address indexed approver);
-    event LoanDisbursed(address indexed borrower, uint256 principal, uint256 apr, uint256 monthlyPayment, uint256 duration);
+    event LoanDisbursed(
+        address indexed borrower, uint256 principal, uint256 apr, uint256 monthlyPayment, uint256 duration
+    );
     event PaymentMade(address indexed borrower, uint256 principalPaid, uint256 interestPaid, uint256 paymentsRemaining);
     event LoanPaidOff(address indexed borrower);
     event ParameterUpdated(string parameter, uint256 value);
@@ -155,23 +158,22 @@ contract BorrowVault is ERC20,Roles {
      * @param duration Loan duration in months
      * @return requestId Request ID
      */
-    function requestBorrow(uint256 amount, uint256 duration) 
-        external 
+    function requestBorrow(uint256 amount, uint256 duration, address caller)
+        external
         onlyProtocolLevel
-        returns (uint256 requestId) 
+        returns (uint256 requestId)
     {
-        if (amount < minBorrowAmount || amount > maxBorrowAmount) InvalidAmount.selector.revertWith();
-        if (duration < minLoanDuration || duration > maxLoanDuration) InvalidDuration.selector.revertWith();
-        if (loans[msg.sender].active) HasOutstandingLoan.selector.revertWith();
+        // if (duration < minLoanDuration || duration > maxLoanDuration) InvalidDuration.selector.revertWith();
+        if (loans[caller].active) HasOutstandingLoan.selector.revertWith();
 
         requestId = nextRequestId++;
 
         BorrowRequest storage request = borrowRequests[requestId];
-        request.borrower = msg.sender;
+        request.borrower = caller;
         request.amount = amount;
         request.duration = duration;
 
-        emit BorrowRequested(requestId, msg.sender, amount, duration);
+        emit BorrowRequested(requestId, caller, amount, duration);
     }
 
     /**
@@ -238,8 +240,8 @@ contract BorrowVault is ERC20,Roles {
     /**
      * @dev Make a monthly payment
      */
-    function makePayment() external {
-        Loan storage loan = loans[msg.sender];
+    function makePayment(address caller) external onlyProtocolLevel {
+        Loan storage loan = loans[caller];
         if (!loan.active) NoActiveLoan.selector.revertWith();
 
         // Check if payment is due (with grace period)
@@ -248,10 +250,10 @@ contract BorrowVault is ERC20,Roles {
         }
 
         uint256 paymentAmount = loan.monthlyPayment;
-        
+
         // For the last payment, adjust to pay exact remaining amount
         if (loan.paymentsRemaining == 1) {
-            paymentAmount = calculateFinalPayment(msg.sender);
+            paymentAmount = calculateFinalPayment(caller);
         }
 
         // Transfer payment from borrower
@@ -267,61 +269,69 @@ contract BorrowVault is ERC20,Roles {
         loan.nextPaymentDue += SECONDS_PER_MONTH;
 
         // Record payment
-        paymentHistory[msg.sender].push(PaymentRecord({
-            timestamp: block.timestamp,
-            principalPaid: principalPayment,
-            interestPaid: interestPayment,
-            totalPaid: paymentAmount
-        }));
+        paymentHistory[caller].push(
+            PaymentRecord({
+                timestamp: block.timestamp,
+                principalPaid: principalPayment,
+                interestPaid: interestPayment,
+                totalPaid: paymentAmount
+            })
+        );
 
         // Update global tracking
         totalOutstandingPrincipal -= principalPayment;
         totalInterestCollected += interestPayment;
 
         // Burn debt tokens proportionally
-        uint256 tokensToBurn = balanceOf(msg.sender) * principalPayment / (loan.remainingPrincipal + principalPayment);
-        _burn(msg.sender, tokensToBurn);
+        uint256 tokensToBurn = balanceOf(caller) * principalPayment / (loan.remainingPrincipal + principalPayment);
+        _burn(caller, tokensToBurn);
 
         // Return funds to lending vault
         asset.approve(address(lendingVault), paymentAmount);
         lendingVault.returnFunds(principalPayment, interestPayment);
 
-        emit PaymentMade(msg.sender, principalPayment, interestPayment, loan.paymentsRemaining);
+        emit PaymentMade(caller, principalPayment, interestPayment, loan.paymentsRemaining);
 
         // Check if loan is paid off
         if (loan.paymentsRemaining == 0) {
             loan.active = false;
             loan.remainingPrincipal = 0;
-            _burn(msg.sender, balanceOf(msg.sender)); // Burn any remaining dust
-            emit LoanPaidOff(msg.sender);
+            _burn(caller, balanceOf(caller)); // Burn any remaining dust
+            emit LoanPaidOff(caller);
         }
     }
 
     /**
      * @dev Pay off entire loan early
      */
-    function payoffLoan() external {
-        Loan storage loan = loans[msg.sender];
+    function payoffLoan(address borrower) external onlyProtocolLevel {
+        Loan storage loan = loans[borrower];
         if (!loan.active) NoActiveLoan.selector.revertWith();
 
         // Calculate total payoff amount (remaining principal + accrued interest)
-        uint256 accruedInterest = calculateAccruedInterest(msg.sender);
+        uint256 accruedInterest = calculateAccruedInterest(borrower);
         uint256 payoffAmount = loan.remainingPrincipal + accruedInterest;
 
         // Transfer payment
         asset.safeTransferFrom(msg.sender, address(this), payoffAmount);
 
         // Record payment
-        paymentHistory[msg.sender].push(PaymentRecord({
-            timestamp: block.timestamp,
-            principalPaid: loan.remainingPrincipal,
-            interestPaid: accruedInterest,
-            totalPaid: payoffAmount
-        }));
+        paymentHistory[borrower].push(
+            PaymentRecord({
+                timestamp: block.timestamp,
+                principalPaid: loan.remainingPrincipal,
+                interestPaid: accruedInterest,
+                totalPaid: payoffAmount
+            })
+        );
 
         // Update global tracking
         totalOutstandingPrincipal -= loan.remainingPrincipal;
         totalInterestCollected += accruedInterest;
+
+        // Return funds to lending vault
+        asset.approve(address(lendingVault), payoffAmount);
+        lendingVault.returnFunds(loan.remainingPrincipal, accruedInterest);
 
         // Clear loan
         loan.remainingPrincipal = 0;
@@ -329,13 +339,9 @@ contract BorrowVault is ERC20,Roles {
         loan.active = false;
 
         // Burn all debt tokens
-        _burn(msg.sender, balanceOf(msg.sender));
+        _burn(borrower, balanceOf(borrower));
 
-        // Return funds to lending vault
-        asset.approve(address(lendingVault), payoffAmount);
-        lendingVault.returnFunds(loan.remainingPrincipal, accruedInterest);
-
-        emit LoanPaidOff(msg.sender);
+        emit LoanPaidOff(borrower);
     }
 
     // === CALCULATION FUNCTIONS ===
@@ -347,14 +353,14 @@ contract BorrowVault is ERC20,Roles {
      * @param months Number of months
      * @return Monthly payment amount
      */
-    function calculateMonthlyPayment(
-        uint256 principal,
-        uint256 monthlyRate,
-        uint256 months
-    ) public pure returns (uint256) {
+    function calculateMonthlyPayment(uint256 principal, uint256 monthlyRate, uint256 months)
+        public
+        pure
+        returns (uint256)
+    {
         // PMT = P * [r(1+r)^n] / [(1+r)^n - 1]
         // Where P = principal, r = monthly rate, n = number of payments
-        
+
         if (monthlyRate == 0) {
             return principal / months;
         }
@@ -362,7 +368,7 @@ contract BorrowVault is ERC20,Roles {
         // Calculate (1 + r)^n
         uint256 onePlusR = 1e18 + monthlyRate;
         uint256 compoundFactor = 1e18;
-        
+
         for (uint256 i = 0; i < months; i++) {
             compoundFactor = compoundFactor * onePlusR / 1e18;
         }
@@ -370,7 +376,7 @@ contract BorrowVault is ERC20,Roles {
         // Calculate payment
         uint256 numerator = principal * monthlyRate * compoundFactor / 1e18;
         uint256 denominator = compoundFactor - 1e18;
-        
+
         return numerator / denominator;
     }
 
@@ -380,10 +386,7 @@ contract BorrowVault is ERC20,Roles {
      * @param apr Annual percentage rate in basis points
      * @return Interest payment amount
      */
-    function calculateInterestPayment(
-        uint256 remainingPrincipal,
-        uint256 apr
-    ) public pure returns (uint256) {
+    function calculateInterestPayment(uint256 remainingPrincipal, uint256 apr) public pure returns (uint256) {
         // Monthly interest = (Remaining Principal * APR) / 12
         return remainingPrincipal * apr / BASIS_POINTS / 12;
     }
@@ -406,7 +409,7 @@ contract BorrowVault is ERC20,Roles {
      */
     function calculateAccruedInterest(address borrower) public view returns (uint256) {
         Loan memory loan = loans[borrower];
-        
+
         // Calculate days since last payment
         uint256 daysSinceLastPayment;
         if (loan.paymentsRemaining == loan.loanDuration) {
@@ -419,7 +422,7 @@ contract BorrowVault is ERC20,Roles {
 
         // Daily interest rate
         uint256 dailyRate = loan.apr * 1e18 / BASIS_POINTS / 365;
-        
+
         // Accrued interest
         return loan.remainingPrincipal * dailyRate * daysSinceLastPayment / 1e18;
     }
@@ -429,15 +432,19 @@ contract BorrowVault is ERC20,Roles {
     /**
      * @dev Get loan details for a borrower
      */
-    function getLoanDetails(address borrower) external view returns (
-        uint256 principal,
-        uint256 remainingPrincipal,
-        uint256 apr,
-        uint256 monthlyPayment,
-        uint256 nextPaymentDue,
-        uint256 paymentsRemaining,
-        bool active
-    ) {
+    function getLoanDetails(address borrower)
+        external
+        view
+        returns (
+            uint256 principal,
+            uint256 remainingPrincipal,
+            uint256 apr,
+            uint256 monthlyPayment,
+            uint256 nextPaymentDue,
+            uint256 paymentsRemaining,
+            bool active
+        )
+    {
         Loan memory loan = loans[borrower];
         return (
             loan.principal,
@@ -460,12 +467,11 @@ contract BorrowVault is ERC20,Roles {
     /**
      * @dev Get next payment details
      */
-    function getNextPaymentDetails(address borrower) external view returns (
-        uint256 paymentAmount,
-        uint256 principalPortion,
-        uint256 interestPortion,
-        uint256 dueDate
-    ) {
+    function getNextPaymentDetails(address borrower)
+        external
+        view
+        returns (uint256 paymentAmount, uint256 principalPortion, uint256 interestPortion, uint256 dueDate)
+    {
         Loan memory loan = loans[borrower];
         if (!loan.active) return (0, 0, 0, 0);
 
@@ -494,16 +500,20 @@ contract BorrowVault is ERC20,Roles {
     /**
      * @dev Get vault statistics
      */
-    function getVaultStats() external view returns (
-        uint256 totalPrincipalOutstanding,
-        uint256 totalInterestEarned,
-        uint256 averageAPR,
-        uint256 activeLoans
-    ) {
+    function getVaultStats()
+        external
+        view
+        returns (
+            uint256 totalPrincipalOutstanding,
+            uint256 totalInterestEarned,
+            uint256 averageAPR,
+            uint256 activeLoans
+        )
+    {
         totalPrincipalOutstanding = totalOutstandingPrincipal;
         totalInterestEarned = totalInterestCollected;
         averageAPR = baseAPR; // Could be made dynamic based on risk
-        
+
         // Count active loans (simplified - in production, maintain a counter)
         // This is a placeholder - you'd want to track this more efficiently
         activeLoans = totalSupply() > 0 ? 1 : 0; // Simplified
@@ -529,4 +539,6 @@ contract BorrowVault is ERC20,Roles {
     function approve(address, uint256) public pure override returns (bool) {
         DebtTokenAreNotApprovable.selector.revertWith();
     }
+
+    function _authorizeUpgrade(address) internal override onlyAdmin {}
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import {IAccessRegistry} from '../interfaces/IAccessRegistry.sol';
-import {CustomRevert} from '../libraries/CustomRevert.sol';
+import {IAccessRegistry} from "../interfaces/IAccessRegistry.sol";
+import {CustomRevert} from "../libraries/CustomRevert.sol";
 
 abstract contract Roles {
     using CustomRevert for bytes4;
@@ -14,27 +14,23 @@ abstract contract Roles {
 
     IAccessRegistry internal accessRegistry;
 
-
     error NotAuthorized();
 
-
-    constructor(address _accessRegistry){
-
-        accessRegistry =  IAccessRegistry(_accessRegistry);
-
+    constructor(address _accessRegistry) {
+        accessRegistry = IAccessRegistry(_accessRegistry);
     }
 
-    modifier onlyAdmin(){
+    modifier onlyAdmin() {
         if (!accessRegistry.hasRole(ADMIN_ROLE, msg.sender)) NotAuthorized.selector.revertWith();
         _;
     }
 
-    modifier onlyWhitelistedBorrower(){
+    modifier onlyWhitelistedBorrower() {
         if (!accessRegistry.hasRole(WHITELISTED_BORROWER_ROLE, msg.sender)) NotAuthorized.selector.revertWith();
         _;
     }
 
-    modifier onlyMultisigSigner(){
+    modifier onlyMultisigSigner() {
         if (!accessRegistry.hasRole(MULTISIG_SIGNER_ROLE, msg.sender)) NotAuthorized.selector.revertWith();
         _;
     }

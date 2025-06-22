@@ -18,8 +18,7 @@ contract VaultRouter is Roles {
     using SafeERC20 for IERC20;
     using Lock for *;
 
-    constructor(address _accessRegistry) Roles(_accessRegistry) {
-    }
+    constructor(address _accessRegistry) Roles(_accessRegistry) {}
 
     error AssetNotSupported();
     error InvalidAmount();
@@ -50,13 +49,11 @@ contract VaultRouter is Roles {
         Lock.lock();
     }
 
-
-
-    function addLendingVault(address _asset, LendingVaultInfo calldata _vaultInfo) external onlyAdmin {
+    function setLendingVault(address _asset, LendingVaultInfo calldata _vaultInfo) external onlyAdmin {
         lendingVaults[_asset] = _vaultInfo;
     }
 
-    function addBorrowVault(address _asset, BorrowVaultInfo calldata _vaultInfo) external onlyAdmin {
+    function setBorrowVault(address _asset, BorrowVaultInfo calldata _vaultInfo) external onlyAdmin {
         borrowVaults[_asset] = _vaultInfo;
     }
 
@@ -70,7 +67,11 @@ contract VaultRouter is Roles {
         return borrowVaults[_asset];
     }
 
-    function deposit(address _asset, uint256 _amount, address _reciever) external returns (uint256 shares) {
+    function deposit(address _asset, uint256 _amount, address _reciever)
+        external
+        nonReentrant
+        returns (uint256 shares)
+    {
         LendingVaultInfo memory vaultInfo = getLendingVault(_asset);
         if (_amount < vaultInfo.minDepositAmount || _amount > vaultInfo.maxDepositAmount) {
             InvalidAmount.selector.revertWith();
@@ -84,30 +85,47 @@ contract VaultRouter is Roles {
         shares = ILendingVault(vaultInfo.vaultAddress).deposit(_amount, _reciever);
     }
 
-    function withdraw(address _asset, uint256 _amount, address _reciever) external returns (uint256 asset) {
+    function withdraw(address _asset, uint256 _amount, address _reciever, address owner)
+        external
+        nonReentrant
+        returns (uint256 asset)
+    {
         LendingVaultInfo memory vaultInfo = getLendingVault(_asset);
         if (_reciever == address(0)) InvalidAddress.selector.revertWith();
 
-        asset = ILendingVault(vaultInfo.vaultAddress).withdraw(_amount, _reciever, _reciever);
+        asset = ILendingVault(vaultInfo.vaultAddress).withdraw(_amount, _reciever, owner);
     }
 
-    function requestBorrow(address _asset, uint256 _amount)
+    function requestBorrow(address _asset, uint256 _amount, uint256 _duration)
         external
         onlyWhitelistedBorrower
+        nonReentrant
         returns (uint256 requestId)
     {
         BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
         if (_amount < vaultInfo.minLoanAmount || _amount > vaultInfo.maxLoanAmount) InvalidAmount.selector.revertWith();
-        requestId = IBorrowVault(vaultInfo.vaultAddress).requestBorrow(_amount, msg.sender);
+        requestId = IBorrowVault(vaultInfo.vaultAddress).requestBorrow(_amount, _duration, msg.sender);
     }
 
-    function repayBorrow(address _asset, uint256 _amount) external onlyWhitelistedBorrower {
+    function makePayment(address _asset, address _borrower) external nonReentrant {
         BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
+        IBorrowVault vaultDispatcher = IBorrowVault(vaultInfo.vaultAddress);
+        (,,, uint256 monthlyPayment,,,) = vaultDispatcher.getLoanDetails(_borrower);
 
         IERC20 assetDispatcher = IERC20(_asset);
-        assetDispatcher.safeTransferFrom(msg.sender, address(this), _amount);
-        assetDispatcher.forceApprove(vaultInfo.vaultAddress, _amount);
-        IBorrowVault(vaultInfo.vaultAddress).repay(_amount, msg.sender);
+        assetDispatcher.safeTransferFrom(msg.sender, address(this), monthlyPayment);
+        assetDispatcher.forceApprove(vaultInfo.vaultAddress, monthlyPayment);
+        vaultDispatcher.makePayment(_borrower);
+    }
+
+    function payoffLoan(address _asset, address _borrower) external nonReentrant {
+        BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
+        IBorrowVault vaultDispatcher = IBorrowVault(vaultInfo.vaultAddress);
+        IERC20 assetDispatcher = IERC20(_asset);
+        uint256 payoffAmount = vaultDispatcher.getPayoffAmount(_borrower);
+        assetDispatcher.safeTransferFrom(msg.sender, address(this), payoffAmount);
+        assetDispatcher.forceApprove(vaultInfo.vaultAddress, payoffAmount);
+        vaultDispatcher.payoffLoan(_borrower);
     }
 
     function isLendingVaultSupported(address _asset) internal view returns (bool) {
