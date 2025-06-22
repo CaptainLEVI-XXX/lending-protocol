@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {AccessRegistry} from "@qiro/AccessRegisty.sol";
 import {LendingVault} from "@qiro/LendingVault.sol";
-import {BorrowVault} from "@qiro/BorrowVaultII.sol";
+import {BorrowVault} from "@qiro/BorrowVault.sol";
 import {MockERC20} from "./mock/ERC20.sol";
 import {VaultRouter} from "@qiro/Router.sol";
 import {BorrowVaultStorage} from "@qiro/storage/BorrowVault.sol";
