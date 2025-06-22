@@ -22,7 +22,7 @@ contract VaultRouter is Roles {
 
     /// @dev Constructor to initialize the contract with an access registry address
     /// @param _accessRegistry The address of the access registry
-    constructor(address _accessRegistry){
+    constructor(address _accessRegistry) {
         initializeRoles(_accessRegistry);
     }
 
@@ -159,7 +159,9 @@ contract VaultRouter is Roles {
     {
         BorrowVaultInfo memory vaultInfo = getBorrowVault(_asset);
         if (_amount < vaultInfo.minLoanAmount || _amount > vaultInfo.maxLoanAmount) InvalidAmount.selector.revertWith();
-        if (_duration < vaultInfo.minLoanDuration || _duration > vaultInfo.maxLoanDuration) InvalidAmount.selector.revertWith();
+        if (_duration < vaultInfo.minLoanDuration || _duration > vaultInfo.maxLoanDuration) {
+            InvalidAmount.selector.revertWith();
+        }
         requestId = IBorrowVault(vaultInfo.vaultAddress).requestBorrow(_amount, _duration, msg.sender);
     }
 

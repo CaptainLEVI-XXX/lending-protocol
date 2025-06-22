@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-
 abstract contract LendingVaultStorage {
-
-    struct TokenInfo{
+    struct TokenInfo {
         address asset;
         string name;
         string symbol;
@@ -12,7 +10,7 @@ abstract contract LendingVaultStorage {
 
     struct LendingVaultInfo {
         mapping(address => uint256) borrowVaultAllocations;
-        uint256 totalAllocated; 
+        uint256 totalAllocated;
     }
 
     error InvalidAddress();
@@ -26,21 +24,19 @@ abstract contract LendingVaultStorage {
     event InterestAccrued(uint256 amount);
 
     bytes32 public constant ASSET_INFO_STORAGE = keccak256("qiro.asset.info.storage");
-    bytes32 public constant LENDING_VAULT_INFO_STORAGE= keccak256("qiro.lending.vault.info.storage");
-
+    bytes32 public constant LENDING_VAULT_INFO_STORAGE = keccak256("qiro.lending.vault.info.storage");
 
     function tokenInfo() internal pure returns (TokenInfo storage _tokenInfo) {
         bytes32 position = ASSET_INFO_STORAGE;
-        assembly{
+        assembly {
             _tokenInfo.slot := position
         }
     }
 
     function lendingVaultInfo() internal pure returns (LendingVaultInfo storage _lendingVaultInfo) {
         bytes32 position = LENDING_VAULT_INFO_STORAGE;
-        assembly{
+        assembly {
             _lendingVaultInfo.slot := position
         }
     }
-    
 }

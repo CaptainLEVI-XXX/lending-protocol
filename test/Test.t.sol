@@ -6,7 +6,6 @@ import {AccessRegistry} from "@qiro/AccessRegisty.sol";
 import {LendingVault} from "@qiro/LendingVault.sol";
 import {BorrowVault} from "@qiro/BorrowVaultII.sol";
 import {MockERC20} from "./mock/ERC20.sol";
-// import {ERC20} from "@solmate/tokens/ERC20.sol";
 import {VaultRouter} from "@qiro/Router.sol";
 import {BorrowVaultStorage} from "@qiro/storage/BorrowVault.sol";
 import {LendingVaultStorage} from "@qiro/storage/LendingVault.sol";
@@ -71,27 +70,29 @@ contract VaultRouterTest is Test {
     }
 
     function _setUpLendingVault() internal {
-    
         lendingVault = new LendingVault();
 
-        bytes memory data = abi.encodeWithSelector(LendingVault.initializeLendingVault.selector, LendingVaultStorage.TokenInfo(address(usdc), "Lending USDC", "lUSDC"), address(accessRegistry));
+        bytes memory data = abi.encodeWithSelector(
+            LendingVault.initializeLendingVault.selector,
+            LendingVaultStorage.TokenInfo(address(usdc), "Lending USDC", "lUSDC"),
+            address(accessRegistry)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(lendingVault), data);
 
         lendingVault = LendingVault(address(proxy));
-
-       
     }
 
     function _setUpBorrowVault() internal {
-      
         borrowVault = new BorrowVault();
 
-        bytes memory data = abi.encodeWithSelector(BorrowVault.initializeBorrowVault.selector, BorrowVaultStorage.AssetInfo("Debt USDC", "dUSDC",address(usdc),ILendingVault(address(lendingVault))), address(accessRegistry));
+        bytes memory data = abi.encodeWithSelector(
+            BorrowVault.initializeBorrowVault.selector,
+            BorrowVaultStorage.AssetInfo("Debt USDC", "dUSDC", address(usdc), ILendingVault(address(lendingVault))),
+            address(accessRegistry)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(borrowVault), data);
 
         borrowVault = BorrowVault(address(proxy));
-
-   
     }
 
     function _setupRoles() internal {

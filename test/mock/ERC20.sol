@@ -4,13 +4,12 @@ pragma solidity ^0.8.13;
 import {ERC20} from "@solady/tokens/ERC20.sol";
 
 contract MockERC20 is ERC20 {
-
     function name() public pure override returns (string memory) {
         return "MockERC20";
     }
 
     function symbol() public pure override returns (string memory) {
-        return "MOCK";  
+        return "MOCK";
     }
 
     function decimals() public pure override returns (uint8) {

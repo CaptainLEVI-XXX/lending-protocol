@@ -10,7 +10,6 @@ import {ERC20} from "@solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "@solady/utils/SafeTransferLib.sol";
 import {BorrowVaultStorage} from "./storage/BorrowVault.sol";
 
-
 /**
  * @title BorrowVault
  * @dev Debt token (dToken) implementation for amortized borrowing
@@ -26,7 +25,6 @@ contract BorrowVault is BorrowVaultStorage, ERC20, Roles, UUPSUpgradeable {
     uint256 public constant SECONDS_PER_MONTH = 30 days;
     uint256 public constant GRACE_PERIOD = 5 days;
 
-
     // Loan parameters
     uint256 public baseAPR = 800; // 8% base APR in basis points
     uint256 public requiredApprovals = 2;
@@ -40,7 +38,7 @@ contract BorrowVault is BorrowVaultStorage, ERC20, Roles, UUPSUpgradeable {
         _disableInitializers();
     }
 
-    function initializeBorrowVault(AssetInfo memory _tokenInfo,address _accessRegistry) external initializer {
+    function initializeBorrowVault(AssetInfo memory _tokenInfo, address _accessRegistry) external initializer {
         if (_tokenInfo.asset == address(0)) InvalidAddress.selector.revertWith();
         if (_accessRegistry == address(0)) InvalidAddress.selector.revertWith();
         if (address(_tokenInfo.lendingVault) == address(0)) InvalidAddress.selector.revertWith();
@@ -102,7 +100,6 @@ contract BorrowVault is BorrowVaultStorage, ERC20, Roles, UUPSUpgradeable {
      * @param requestId Request to approve
      */
     function approveBorrow(uint256 requestId) external onlyMultisigSigner {
-
         BorrowRequestInfo storage borrowRequestInfo = borrowRequestInfo();
         BorrowRequest storage request = borrowRequestInfo.borrowRequests[requestId];
 

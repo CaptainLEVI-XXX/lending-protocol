@@ -3,17 +3,15 @@ pragma solidity ^0.8.19;
 
 import {ILendingVault} from "@qiro/interfaces/ILendingVault.sol";
 
-
 abstract contract BorrowVaultStorage {
-
-    struct AssetInfo{
+    struct AssetInfo {
         string name;
         string symbol;
         address asset;
         ILendingVault lendingVault;
     }
 
-       // Loan structure for amortized loans
+    // Loan structure for amortized loans
     struct Loan {
         uint256 principal; // Original loan amount
         uint256 remainingPrincipal; // Outstanding principal
@@ -44,18 +42,18 @@ abstract contract BorrowVaultStorage {
         bool executed;
     }
 
-    struct BorrowRequestInfo{
+    struct BorrowRequestInfo {
         mapping(uint256 => BorrowRequest) borrowRequests;
     }
 
-    struct LoanInfo{
+    struct LoanInfo {
         mapping(address => Loan) loans;
         uint256 nextRequestId;
         uint256 totalOutstandingPrincipal;
         uint256 totalInterestCollected;
     }
 
-    struct PaymentHistoryInfo{
+    struct PaymentHistoryInfo {
         mapping(address => PaymentRecord[]) paymentHistory;
     }
 
@@ -85,42 +83,37 @@ abstract contract BorrowVaultStorage {
     event LoanPaidOff(address indexed borrower);
     event ParameterUpdated(string parameter, uint256 value);
 
-
     bytes32 public constant ASSET_INFO_STORAGE = keccak256("qiro.asset.info.storage");
     bytes32 public constant BORROW_REQUEST_INFO_STORAGE = keccak256("qiro.borrow.request.info.storage");
     bytes32 public constant LOAN_INFO_STORAGE = keccak256("qiro.loan.info.storage");
     bytes32 public constant PAYMENT_HISTORY_INFO_STORAGE = keccak256("qiro.payment.history.info.storage");
     bytes32 public constant STATE_VARIABLES_STORAGE = keccak256("qiro.state.variables.storage");
 
-
-
     function assetInfo() internal pure returns (AssetInfo storage _assetInfo) {
         bytes32 position = ASSET_INFO_STORAGE;
-        assembly{
+        assembly {
             _assetInfo.slot := position
         }
     }
 
     function borrowRequestInfo() internal pure returns (BorrowRequestInfo storage _borrowRequestInfo) {
         bytes32 position = BORROW_REQUEST_INFO_STORAGE;
-        assembly{
+        assembly {
             _borrowRequestInfo.slot := position
         }
     }
 
     function loanInfo() internal pure returns (LoanInfo storage _loanInfo) {
         bytes32 position = LOAN_INFO_STORAGE;
-        assembly{
+        assembly {
             _loanInfo.slot := position
         }
     }
 
     function paymentHistoryInfo() internal pure returns (PaymentHistoryInfo storage _paymentHistoryInfo) {
         bytes32 position = PAYMENT_HISTORY_INFO_STORAGE;
-        assembly{
+        assembly {
             _paymentHistoryInfo.slot := position
         }
     }
-
-    
 }

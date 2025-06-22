@@ -15,7 +15,7 @@ import {LendingVaultStorage} from "@qiro/storage/LendingVault.sol";
  * @dev ERC-4626 compliant vault for deposits and withdrawals
  * @notice This vault accepts deposits and allocates funds to borrow vaults
  */
-contract LendingVault is LendingVaultStorage,Roles, ERC4626,UUPSUpgradeable{
+contract LendingVault is LendingVaultStorage, Roles, ERC4626, UUPSUpgradeable {
     using CustomRevert for bytes4;
     using SafeTransferLib for address;
 
@@ -159,29 +159,19 @@ contract LendingVault is LendingVaultStorage,Roles, ERC4626,UUPSUpgradeable{
         return super.deposit(amount, receiver);
     }
 
-    function redeem(uint256 , address , address )
-        public
-        virtual
-        override
-        returns (uint256 )
-    {
+    function redeem(uint256, address, address) public virtual override returns (uint256) {
         NotSupported.selector.revertWith();
     }
 
-    function mint(uint256 , address )
-        public
-        virtual
-        override
-        returns (uint256 )
-    {
+    function mint(uint256, address) public virtual override returns (uint256) {
         NotSupported.selector.revertWith();
     }
 
     function withdraw(uint256 assets, address to, address owner)
         public
         virtual
-        onlyProtocolLevel
         override
+        onlyProtocolLevel
         returns (uint256 shares)
     {
         if (assets > maxWithdraw(owner)) InvalidAmount.selector.revertWith();
