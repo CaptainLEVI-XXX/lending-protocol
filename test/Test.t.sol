@@ -413,7 +413,7 @@ contract VaultRouterTest is Test {
 
         // Request borrow
         vm.prank(borrower1);
-        uint256 requestId = router.requestBorrow(address(usdc), amount, duration);
+        router.requestBorrow(address(usdc), amount, duration);
 
         // Verify request was created
         // (address borrower, uint256 reqAmount, uint256 reqDuration,,,) = borrowVault.borrowRequests(requestId);
@@ -520,12 +520,12 @@ contract VaultRouterTest is Test {
 
         vm.startPrank(depositor2);
         usdc.approve(address(router), depositAmount);
-        uint256 shares2 = router.deposit(address(usdc), depositAmount, depositor2);
+        router.deposit(address(usdc), depositAmount, depositor2);
         vm.stopPrank();
 
         vm.startPrank(depositor3);
         usdc.approve(address(router), depositAmount);
-        uint256 shares3 = router.deposit(address(usdc), depositAmount, depositor3);
+        router.deposit(address(usdc), depositAmount, depositor3);
         vm.stopPrank();
 
         // Verify initial 1:1 share ratio
