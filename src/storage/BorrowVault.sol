@@ -87,7 +87,6 @@ abstract contract BorrowVaultStorage {
     bytes32 public constant BORROW_REQUEST_INFO_STORAGE = keccak256("qiro.borrow.request.info.storage");
     bytes32 public constant LOAN_INFO_STORAGE = keccak256("qiro.loan.info.storage");
     bytes32 public constant PAYMENT_HISTORY_INFO_STORAGE = keccak256("qiro.payment.history.info.storage");
-    bytes32 public constant STATE_VARIABLES_STORAGE = keccak256("qiro.state.variables.storage");
 
     function assetInfo() internal pure returns (AssetInfo storage _assetInfo) {
         bytes32 position = ASSET_INFO_STORAGE;

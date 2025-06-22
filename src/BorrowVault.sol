@@ -28,12 +28,10 @@ contract BorrowVault is BorrowVaultStorage, ERC20, Roles, UUPSUpgradeable {
     // Loan parameters
     uint256 public baseAPR = 800; // 8% base APR in basis points
     uint256 public requiredApprovals = 2;
-    uint256 public maxLoanDuration = 36; // 36 months max
-    uint256 public minLoanDuration = 6; // 6 months min
-
     /**
      * @dev Constructor
      */
+
     constructor() {
         _disableInitializers();
     }
