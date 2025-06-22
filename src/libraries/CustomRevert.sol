@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-/// @title Library for reverting with custom errors efficiently
-/// @notice Contains functions for reverting with custom errors with different argument types efficiently
-/// @dev To use this library, declare `using CustomRevert for bytes4;` and replace `revert CustomError()` with
-/// `CustomError.selector.revertWith()`
-/// @dev The functions may tamper with the free memory pointer but it is fine since the call context is exited immediately
+/// @title CustomRevert
+/// @notice Library for efficient custom error reverts
+/// @dev Provides gas-optimized revert functions using assembly
 library CustomRevert {
     /// @dev ERC-7751 error for wrapping bubbled up reverts
     error WrappedError(address target, bytes4 selector, bytes reason, bytes details);
 
-    /// @dev Reverts with the selector of a custom error in the scratch space
+    /// @dev Reverts with a custom error selector
+    /// @param selector The error selector to revert with
     function revertWith(bytes4 selector) internal pure {
         assembly ("memory-safe") {
             mstore(0, selector)
@@ -18,7 +17,9 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with an address argument in the scratch space
+    /// @dev Reverts with a custom error and an address argument
+    /// @param selector The error selector
+    /// @param addr The address argument
     function revertWith(bytes4 selector, address addr) internal pure {
         assembly ("memory-safe") {
             mstore(0, selector)
@@ -27,7 +28,9 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with an int24 argument in the scratch space
+    /// @dev Reverts with a custom error and an int24 argument
+    /// @param selector The error selector
+    /// @param value The int24 value
     function revertWith(bytes4 selector, int24 value) internal pure {
         assembly ("memory-safe") {
             mstore(0, selector)
@@ -36,7 +39,9 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with a uint160 argument in the scratch space
+    /// @dev Reverts with a custom error and a uint160 argument
+    /// @param selector The error selector
+    /// @param value The uint160 value
     function revertWith(bytes4 selector, uint160 value) internal pure {
         assembly ("memory-safe") {
             mstore(0, selector)
@@ -45,7 +50,10 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with two int24 arguments
+    /// @dev Reverts with a custom error and two int24 arguments
+    /// @param selector The error selector
+    /// @param value1 First int24 value
+    /// @param value2 Second int24 value
     function revertWith(bytes4 selector, int24 value1, int24 value2) internal pure {
         assembly ("memory-safe") {
             let fmp := mload(0x40)
@@ -56,7 +64,10 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with two uint160 arguments
+    /// @dev Reverts with a custom error and two uint160 arguments
+    /// @param selector The error selector
+    /// @param value1 First uint160 value
+    /// @param value2 Second uint160 value
     function revertWith(bytes4 selector, uint160 value1, uint160 value2) internal pure {
         assembly ("memory-safe") {
             let fmp := mload(0x40)
@@ -67,7 +78,10 @@ library CustomRevert {
         }
     }
 
-    /// @dev Reverts with a custom error with two address arguments
+    /// @dev Reverts with a custom error and two address arguments
+    /// @param selector The error selector
+    /// @param value1 First address
+    /// @param value2 Second address
     function revertWith(bytes4 selector, address value1, address value2) internal pure {
         assembly ("memory-safe") {
             let fmp := mload(0x40)
@@ -78,8 +92,11 @@ library CustomRevert {
         }
     }
 
-    /// @notice bubble up the revert message returned by a call and revert with a wrapped ERC-7751 error
-    /// @dev this method can be vulnerable to revert data bombs
+    /// @notice Wrap a revert with additional context
+    /// @dev This method can be vulnerable to revert data bombs
+    /// @param revertingContract Address of the contract that reverted
+    /// @param revertingFunctionSelector Selector of the reverting function
+    /// @param additionalContext Additional context to add to the revert
     function bubbleUpAndRevertWith(
         address revertingContract,
         bytes4 revertingFunctionSelector,
