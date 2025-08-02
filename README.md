@@ -1,4 +1,4 @@
-# Qiro Assignment: Decentralized Lending Protocol
+# Decentralized Lending Protocol
 
 A modular, upgradeable lending protocol implementing ERC-4626 vaults with amortized loans and multisig controls.
 
@@ -111,8 +111,8 @@ A modular, upgradeable lending protocol implementing ERC-4626 vaults with amorti
 
 ```bash
 # Clone the repository
-git clone https://github.com/CaptainLEVI-XXX/qiro-assignment.git
-cd qiro-assignment
+git clone https://github.com/CaptainLEVI-XXX/lending-protocol.git
+cd lending-protoco
 
 # Install Foundry (if not already installed)
 curl -L https://foundry.paradigm.xyz | bash
